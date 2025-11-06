@@ -1,85 +1,126 @@
-mod error;
+#![deny(unreachable_pub)]
+#![warn(missing_docs)]
+
+//! Модуль конвертации записей банковсковских транзакций, в нем реализованы 3 типа файла:
+//! 1. Текстовый формат
+//! 2. Бинарный формат
+//! 3. CSV формат
+//!
+//! Реализовано преобразование каждого типа в другой.
+
+/// Модуль ошибок
+pub mod error;
+use enum_display::EnumDisplay;
 use error::Result;
-pub use error::AppError;
 
-/// Модуль конвертор записей банковского счета, в нем реализованы 3 типа конвертора:
-/// 1. Текстовый формат
-/// 2. Бинарный формат
-/// 3. CSV формат
-/// И также 1 тип записи банковского счета
-/// 
-/// Реализовано преобразование каждого типа в другой.
 mod convertor;
-pub use convertor::{
-    CsvYPBankRecord,
-    BinYPBankRecord,
-    TxtYPBankRecord,
-    Message,
-};
+pub use convertor::Message;
+use convertor::{BinYPBankRecord, CsvYPBankRecord, TxtYPBankRecord};
 
-/// Трейт для работы с записями банковского счета
-/// Реализовано методы:
-/// 1. write_to - запись в файл
-/// 2. push - добавление записи в конец
-/// 3. len - количество записей
-/// 4. pop - удаление последней записи
-/// 5. iter - итератор по записям
-pub trait BankRecord {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> Result<()>;
-    fn push(&mut self, value: Message) where Self: Sized;
-    fn len(&self) -> usize;
-    fn pop(&mut self) -> Option<Message>;
-    fn iter(&self) -> std::slice::Iter<'_, Message>;
+use crate::convertor::BankRecord;
+
+/// Форматы данных
+#[derive(Debug, EnumDisplay, Clone, Copy)]
+pub enum DataFormat {
+    /// Текстовый формат
+    TXT,
+    /// Бинарный формат
+    BIN,
+    /// CSV формат
+    CSV,
 }
 
-/// Тип записи банковского счета для удобства
-pub enum BankRecordEnum {
+/// Тип записи банковского счета
+#[derive(Debug, PartialEq, EnumDisplay, Clone)]
+pub enum BankRecordConvertor {
+    /// Текстовый формат
     TXT(TxtYPBankRecord),
+    /// Бинарный формат
     BIN(BinYPBankRecord),
+    /// CSV формат
     CSV(CsvYPBankRecord),
 }
 
 /// Реализация BankRecord для BankRecordEnum
-impl BankRecord for BankRecordEnum {    
+impl BankRecordConvertor {
+    /// Создание из файла
+    pub fn from_read<R: std::io::Read>(r: R, format: &DataFormat) -> Result<Self> {
+        match format {
+            DataFormat::TXT => {
+                let record = TxtYPBankRecord::from_read(r)?;
+                Ok(BankRecordConvertor::TXT(record))
+            }
+            DataFormat::BIN => {
+                let record = BinYPBankRecord::from_read(r)?;
+                Ok(BankRecordConvertor::BIN(record))
+            }
+            DataFormat::CSV => {
+                let record = CsvYPBankRecord::from_read(r)?;
+                Ok(BankRecordConvertor::CSV(record))
+            }
+        }
+    }
+    /// Конвертация в другой формат
+    pub fn convert_to(self, dataformat: &DataFormat) -> Self {
+        match (self, dataformat) {
+            (Self::TXT(record), DataFormat::TXT) => Self::TXT(record),
+            (Self::BIN(record), DataFormat::BIN) => Self::BIN(record),
+            (Self::CSV(record), DataFormat::CSV) => Self::CSV(record),
+            (Self::TXT(record), DataFormat::BIN) => Self::BIN(record.into()),
+            (Self::TXT(record), DataFormat::CSV) => Self::CSV(record.into()),
+            (Self::BIN(record), DataFormat::TXT) => Self::TXT(record.into()),
+            (Self::BIN(record), DataFormat::CSV) => Self::CSV(record.into()),
+            (Self::CSV(record), DataFormat::TXT) => Self::TXT(record.into()),
+            (Self::CSV(record), DataFormat::BIN) => Self::BIN(record.into()),
+        }
+    }
+
     /// Запись в файл
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+    pub fn write_to<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         match self {
-            BankRecordEnum::TXT(txt_ypbank_record) => txt_ypbank_record.write_to(writer),
-            BankRecordEnum::BIN(bin_ypbank_record) => bin_ypbank_record.write_to(writer),
-            BankRecordEnum::CSV(csv_ypbank_record) => csv_ypbank_record.write_to(writer),
+            BankRecordConvertor::TXT(record) => record.write_to(writer),
+            BankRecordConvertor::BIN(record) => record.write_to(writer),
+            BankRecordConvertor::CSV(record) => record.write_to(writer),
         }
     }
     /// Добавление записи в конец
-    fn push(&mut self, value: Message) where Self: Sized {
+    pub fn push(&mut self, value: Message) {
         match self {
-            BankRecordEnum::TXT(txt_ypbank_record) => txt_ypbank_record.push(value),
-            BankRecordEnum::BIN(bin_ypbank_record) => bin_ypbank_record.push(value),
-            BankRecordEnum::CSV(csv_ypbank_record) => csv_ypbank_record.push(value),
+            BankRecordConvertor::TXT(record) => record.push(value),
+            BankRecordConvertor::BIN(record) => record.push(value),
+            BankRecordConvertor::CSV(record) => record.push(value),
         }
     }
     /// Количество записей
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         match self {
-            BankRecordEnum::TXT(txt_ypbank_record) => txt_ypbank_record.len(),
-            BankRecordEnum::BIN(bin_ypbank_record) => bin_ypbank_record.len(),
-            BankRecordEnum::CSV(csv_ypbank_record) => csv_ypbank_record.len(),
+            BankRecordConvertor::TXT(record) => record.len(),
+            BankRecordConvertor::BIN(record) => record.len(),
+            BankRecordConvertor::CSV(record) => record.len(),
+        }
+    }
+    /// Проверка на пустоту
+    pub fn is_empty(&self) -> bool {
+        match self {
+            BankRecordConvertor::TXT(record) => record.is_empty(),
+            BankRecordConvertor::BIN(record) => record.is_empty(),
+            BankRecordConvertor::CSV(record) => record.is_empty(),
         }
     }
     /// Удаление последней записи
-    fn pop(&mut self) -> Option<Message> {
-         match self {
-            BankRecordEnum::TXT(txt_ypbank_record) => txt_ypbank_record.pop(),
-            BankRecordEnum::BIN(bin_ypbank_record) => bin_ypbank_record.pop(),
-            BankRecordEnum::CSV(csv_ypbank_record) => csv_ypbank_record.pop(),
+    pub fn pop(&mut self) -> Option<Message> {
+        match self {
+            BankRecordConvertor::TXT(record) => record.pop(),
+            BankRecordConvertor::BIN(record) => record.pop(),
+            BankRecordConvertor::CSV(record) => record.pop(),
         }
     }
     /// Итератор по записям
-    fn iter(&self) -> std::slice::Iter<'_, Message> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Message> {
         match self {
-            BankRecordEnum::TXT(txt_ypbank_record) => txt_ypbank_record.iter(),
-            BankRecordEnum::BIN(bin_ypbank_record) => bin_ypbank_record.iter(),
-            BankRecordEnum::CSV(csv_ypbank_record) => csv_ypbank_record.iter(),
+            BankRecordConvertor::TXT(record) => record.iter(),
+            BankRecordConvertor::BIN(record) => record.iter(),
+            BankRecordConvertor::CSV(record) => record.iter(),
         }
     }
 }
-

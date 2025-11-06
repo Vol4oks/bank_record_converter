@@ -1,25 +1,31 @@
+#![warn(missing_docs)]
+//! Програма для конвертации данных из одного формата в другой
+//! Пример запуска: `ypbank_converter --input ../../tests/data/examples_file/records_example.bin -I bin -O txt > output_file.txt`
 use clap::{Parser, ValueEnum};
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
-use bank_record_converter::{AppError, BankRecord, BinYPBankRecord, CsvYPBankRecord, TxtYPBankRecord};
+use bank_record_converter::{BankRecordConvertor, DataFormat, error::AppError};
 
+/// CLI arguments
 #[derive(Parser, Debug)]
 struct Cli {
+    /// Input file
     #[arg(short, long)]
     #[arg(help = "Path to the input file")]
     input: PathBuf,
 
+    /// input file format
     #[arg(short = 'I', long)]
-    // #[arg(help = "Path to the input file")]
-    input_format: DataFormat,
+    input_format: InputDataFormat,
 
+    /// output file format
     #[arg(short = 'O', long)]
-    // #[arg(help = "Path to the output file")]
-    output_format: DataFormat,
+    output_format: InputDataFormat,
 }
 
+/// Data format
 #[derive(ValueEnum, Clone, Debug)]
-enum DataFormat {
+enum InputDataFormat {
     /// txt format YPBank
     Txt,
     /// bin format YPBank
@@ -35,57 +41,59 @@ fn main() -> Result<(), AppError> {
         return Err(AppError::IOError(std::io::ErrorKind::NotFound.into()));
     }
 
-    let mut file = std::fs::File::open(&args.input)?;
+    let file = std::fs::File::open(&args.input)?;
 
-    match args.input_format {
-        DataFormat::Txt => {
-            let data = TxtYPBankRecord::from_read(&mut file)?;
-            match args.output_format {
-                DataFormat::Txt => {
-                    println!("Convertation from txt to txt is not supported");
-                }
-                DataFormat::Bin => {
-                    let convert: BinYPBankRecord = data.into();
-                    convert.write_to(&mut &std::io::stdout())?;
-                }
-                DataFormat::Csv => {
-                    let convert: CsvYPBankRecord = data.into();
-                    convert.write_to(&mut &std::io::stdout())?;
-                }
-            }
+    let stdout = std::io::stdout();
+    let mut writer = std::io::BufWriter::new(stdout.lock());
+
+    match (args.input_format, args.output_format) {
+        (InputDataFormat::Txt, InputDataFormat::Txt) => {
+            BankRecordConvertor::from_read(file, &DataFormat::TXT)?
+                .convert_to(&DataFormat::TXT)
+                .write_to(&mut writer)?
         }
-        DataFormat::Bin => {
-            let data = BinYPBankRecord::from_read(&mut file)?;
-            match args.output_format {
-                DataFormat::Txt => {
-                    let convert: TxtYPBankRecord = data.into();
-                    convert.write_to(&mut &std::io::stdout())?;
-                }
-                DataFormat::Bin => {
-                    println!("Convertation from bin to bin is not supported");
-                }
-                DataFormat::Csv => {
-                    let convert: CsvYPBankRecord = data.into();
-                    convert.write_to(&mut &std::io::stdout())?;
-                }
-            }
+        (InputDataFormat::Txt, InputDataFormat::Bin) => {
+            BankRecordConvertor::from_read(file, &DataFormat::TXT)?
+                .convert_to(&DataFormat::BIN)
+                .write_to(&mut writer)?
         }
-        DataFormat::Csv => {
-            let data = CsvYPBankRecord::from_read(&mut file)?;
-            match args.output_format {
-                DataFormat::Txt => {
-                    let convert: TxtYPBankRecord = data.into();
-                    convert.write_to(&mut &std::io::stdout())?;
-                }
-                DataFormat::Bin => {
-                    let convert: BinYPBankRecord = data.into();
-                    convert.write_to(&mut &std::io::stdout())?;
-                }
-                DataFormat::Csv => {
-                    println!("Convertation from csv to csv is not supported");
-                }
-            }
+        (InputDataFormat::Txt, InputDataFormat::Csv) => {
+            BankRecordConvertor::from_read(file, &DataFormat::TXT)?
+                .convert_to(&DataFormat::CSV)
+                .write_to(&mut writer)?
+        }
+        (InputDataFormat::Bin, InputDataFormat::Txt) => {
+            BankRecordConvertor::from_read(file, &DataFormat::BIN)?
+                .convert_to(&DataFormat::TXT)
+                .write_to(&mut writer)?
+        }
+        (InputDataFormat::Bin, InputDataFormat::Bin) => {
+            BankRecordConvertor::from_read(file, &DataFormat::BIN)?
+                .convert_to(&DataFormat::BIN)
+                .write_to(&mut writer)?
+        }
+        (InputDataFormat::Bin, InputDataFormat::Csv) => {
+            BankRecordConvertor::from_read(file, &DataFormat::BIN)?
+                .convert_to(&DataFormat::CSV)
+                .write_to(&mut writer)?
+        }
+        (InputDataFormat::Csv, InputDataFormat::Txt) => {
+            BankRecordConvertor::from_read(file, &DataFormat::CSV)?
+                .convert_to(&DataFormat::TXT)
+                .write_to(&mut writer)?
+        }
+        (InputDataFormat::Csv, InputDataFormat::Bin) => {
+            BankRecordConvertor::from_read(file, &DataFormat::CSV)?
+                .convert_to(&DataFormat::BIN)
+                .write_to(&mut writer)?
+        }
+        (InputDataFormat::Csv, InputDataFormat::Csv) => {
+            BankRecordConvertor::from_read(file, &DataFormat::CSV)?
+                .convert_to(&DataFormat::CSV)
+                .write_to(&mut writer)?
         }
     }
+
+    writer.flush()?;
     Ok(())
 }

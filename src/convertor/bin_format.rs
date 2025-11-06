@@ -1,18 +1,21 @@
 use crate::{
-    BankRecord, CsvYPBankRecord, TxtYPBankRecord,
-    convertor::{Message, StatusTransaction, TypeTransaction},
+    CsvYPBankRecord, TxtYPBankRecord,
+    convertor::{BankRecord, Message, StatusTransaction, TypeTransaction},
     error::{AppError, BinParseError, Result},
 };
 
 const MAGIC_NUMBER: [u8; 4] = [0x59, 0x50, 0x42, 0x4E]; // "YPBN"
 
-#[derive(Debug, PartialEq)]
+const MIN_SAIZE_MESSAGE: usize = 46;
+const MAX_SAIZE_MESSAGE: usize = 1024; // TODO: уточнить максимальный размер записи
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct BinYPBankRecord {
     data: Vec<Message>,
 }
 
 impl BinYPBankRecord {
-    pub fn from_read<R: std::io::Read>(r: &mut R) -> Result<Self> {
+    pub fn from_read<R: std::io::Read>(mut r: R) -> Result<Self> {
         let mut data = Self::new();
         loop {
             // Считываем магическое число
@@ -44,6 +47,23 @@ impl BinYPBankRecord {
             // dbg!(record_size_buf);
             let record_size = u32::from_be_bytes(record_size_buf) as usize;
             // dbg!(record_size);
+            // Проверям размер записи
+            if record_size < MIN_SAIZE_MESSAGE {
+                return Err(AppError::BinParseError(BinParseError::MessageSizeError(
+                    format!(
+                        "Message size is less than {} bytes: {}",
+                        MIN_SAIZE_MESSAGE, record_size
+                    ),
+                )));
+            }
+            if record_size > MAX_SAIZE_MESSAGE {
+                return Err(AppError::BinParseError(BinParseError::MessageSizeError(
+                    format!(
+                        "Message size is more than {} bytes: {}",
+                        MAX_SAIZE_MESSAGE, record_size
+                    ),
+                )));
+            }
             // Считываем саму запись
             let mut record_buf = vec![0u8; record_size];
             r.read_exact(&mut record_buf)?;
@@ -79,7 +99,7 @@ impl BankRecord for BinYPBankRecord {
     }
 
     fn push(&mut self, value: Message) {
-        self.data.push(value);
+        self.data.push(value)
     }
 
     fn len(&self) -> usize {
@@ -92,6 +112,10 @@ impl BankRecord for BinYPBankRecord {
 
     fn iter(&self) -> std::slice::Iter<'_, Message> {
         self.data.iter()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }
 
@@ -135,6 +159,15 @@ impl From<TxtYPBankRecord> for BinYPBankRecord {
 
 impl Message {
     fn parse_from_bin(buf: &[u8]) -> Result<Self> {
+        if buf.len() < MIN_SAIZE_MESSAGE {
+            return Err(AppError::BinParseError(BinParseError::MessageSizeError(
+                format!(
+                    "Message size is less than {} bytes: {}",
+                    MIN_SAIZE_MESSAGE,
+                    buf.len()
+                ),
+            )));
+        }
         // dbg!(buf.len());
         let mut cursor = 0;
 

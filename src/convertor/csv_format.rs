@@ -1,12 +1,16 @@
-use crate::{BankRecord, BinYPBankRecord, TxtYPBankRecord, convertor::Message, error::Result};
+use crate::{
+    BinYPBankRecord, TxtYPBankRecord,
+    convertor::{BankRecord, Message},
+    error::Result,
+};
 
-#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, Clone)]
 pub struct CsvYPBankRecord {
     data: Vec<Message>,
 }
 
 impl CsvYPBankRecord {
-    pub fn from_read<R: std::io::Read>(r: &mut R) -> Result<Self> {
+    pub fn from_read<R: std::io::Read>(r: R) -> Result<Self> {
         let mut reader = csv::Reader::from_reader(r);
         let mut res = Self::new();
         for result in reader.deserialize() {
@@ -16,7 +20,7 @@ impl CsvYPBankRecord {
 
         Ok(res)
     }
-    
+
     pub fn new() -> Self {
         Self { data: Vec::new() }
     }
@@ -48,6 +52,10 @@ impl BankRecord for CsvYPBankRecord {
 
     fn iter(&self) -> std::slice::Iter<'_, Message> {
         self.data.iter()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }
 

@@ -1,26 +1,41 @@
+use std::{fmt::Display, io::BufRead};
+
 use crate::{
-    BankRecord, BinYPBankRecord, CsvYPBankRecord,
-    convertor::{Message, StatusTransaction, TypeTransaction},
+    BinYPBankRecord, CsvYPBankRecord,
+    convertor::{BankRecord, Message, StatusTransaction, TypeTransaction},
     error::{AppError, Result},
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TxtYPBankRecord {
     data: Vec<Message>,
 }
 
 impl TxtYPBankRecord {
-    pub fn from_read<R: std::io::Read>(r: &mut R) -> Result<Self> {
-        let mut data = String::new();
-        r.read_to_string(&mut data)?;
-        // dbg!(data.len());
+    pub fn from_read<R: std::io::Read>(r: R) -> Result<Self> {
+        let reader = std::io::BufReader::new(r);
+        let mut block = Vec::new();
+        let mut parse_data = Vec::new();
 
-        let parse_data: Result<Vec<Message>> = data
-            .split_terminator("\n\n")
-            .map(|mes| Message::from_str(mes))
-            .collect();
+        for line in reader.lines() {
+            match line {
+                Ok(l) => {
+                    if l.trim().is_empty() {
+                        if !block.is_empty() {
+                            parse_data.push(Message::from_str(block)?);
+                            block = Vec::new();
+                        }
+                    } else {
+                        block.push(l);
+                    }
+                }
+                Err(e) => {
+                    return Err(AppError::TxtParseError(e.to_string()));
+                }
+            }
+        }
 
-        Ok(Self { data: parse_data? })
+        Ok(Self { data: parse_data })
     }
 
     pub fn new() -> Self {
@@ -52,6 +67,10 @@ impl BankRecord for TxtYPBankRecord {
 
     fn iter(&self) -> std::slice::Iter<'_, Message> {
         self.data.iter()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }
 
@@ -94,30 +113,14 @@ impl From<CsvYPBankRecord> for TxtYPBankRecord {
 }
 
 impl Message {
-    fn to_string(&self) -> String {
-        format!(
-            "TX_ID: {}\nTX_TYPE: {}\nFROM_USER_ID: {}\nTO_USER_ID: {}\nAMOUNT: {}\nTIMESTAMP: {}\nSTATUS: {}\nDESCRIPTION: {}\n\n",
-            self.tx_id,
-            self.tx_type,
-            self.from_user_id,
-            self.to_user_id,
-            self.amount,
-            self.timestamp,
-            self.status,
-            self.description,
-        )
-    }
-
-    fn from_str(s: &str) -> Result<Self> {
-        let lines = s.lines();
-
+    fn from_str(lines: Vec<String>) -> Result<Self> {
         let mut tx_id = 0;
-        let mut tx_type = TypeTransaction::None;
+        let mut tx_type = TypeTransaction::Transfer;
         let mut from_user_id = 0;
         let mut to_user_id = 0;
         let mut amount = 0;
         let mut timestamp = 0;
-        let mut status = StatusTransaction::None;
+        let mut status = StatusTransaction::Failure;
         let mut description = String::new();
 
         for line in lines {
@@ -127,74 +130,74 @@ impl Message {
 
                 // неотрицательное целое число, идентифицирующее транзакцию
                 l if l.starts_with("TX_ID") => {
-                    if let Some(num) = l.split(": ").nth(1) {
-                        if let Ok(num) = num.parse::<u64>() {
-                            tx_id = num;
-                            continue;
-                        }
+                    if let Some(num) = l.split(": ").nth(1)
+                        && let Ok(num) = num.parse::<u64>()
+                    {
+                        tx_id = num;
+                        continue;
                     }
-                    return Err(AppError::TxtParseError(format!("{}", l)));
+                    return Err(AppError::TxtParseError(l.to_string()));
                 }
 
                 //  тип транзакции
                 l if l.starts_with("TX_TYPE") => match l.split(": ").nth(1) {
-                    Some("DEPOSIT") => tx_type = TypeTransaction::DEPOSIT,
-                    Some("TRANSFER") => tx_type = TypeTransaction::TRANSFER,
-                    Some("WITHDRAWAL") => tx_type = TypeTransaction::WITHDRAWAL,
-                    _ => return Err(AppError::TxtParseError(format!("{}", l))),
+                    Some("DEPOSIT") => tx_type = TypeTransaction::Deposit,
+                    Some("TRANSFER") => tx_type = TypeTransaction::Transfer,
+                    Some("WITHDRAWAL") => tx_type = TypeTransaction::Withdrawal,
+                    _ => return Err(AppError::TxtParseError(l.to_string())),
                 },
 
-                //  неотрицательное целое число, идентифицирующее отправитель счета (0 для DEPOSIT).
+                //  неотрицательное целое число, идентифицирующее отправитель счета (0 для Deposit).
                 l if l.starts_with("FROM_USER_ID") => {
-                    if let Some(num) = l.split(": ").nth(1) {
-                        if let Ok(num) = num.parse::<u64>() {
-                            from_user_id = num;
-                            continue;
-                        }
+                    if let Some(num) = l.split(": ").nth(1)
+                        && let Ok(num) = num.parse::<u64>()
+                    {
+                        from_user_id = num;
+                        continue;
                     }
-                    return Err(AppError::TxtParseError(format!("{}", l)));
+                    return Err(AppError::TxtParseError(l.to_string()));
                 }
 
-                // неотрицательное целое число, идентифицирующее получателя счета (0 для WITHDRAWAL)
+                // неотрицательное целое число, идентифицирующее получателя счета (0 для Withdrawal)
                 l if l.starts_with("TO_USER_ID") => {
-                    if let Some(num) = l.split(": ").nth(1) {
-                        if let Ok(num) = num.parse::<u64>() {
-                            to_user_id = num;
-                            continue;
-                        }
+                    if let Some(num) = l.split(": ").nth(1)
+                        && let Ok(num) = num.parse::<u64>()
+                    {
+                        to_user_id = num;
+                        continue;
                     }
-                    return Err(AppError::TxtParseError(format!("{}", l)));
+                    return Err(AppError::TxtParseError(l.to_string()));
                 }
 
                 // неотрицательное целое число, представляющее сумму в наименьшей единице валюты.
                 l if l.starts_with("AMOUNT") => {
-                    if let Some(num) = l.split(": ").nth(1) {
-                        if let Ok(num) = num.parse::<u64>() {
-                            amount = num;
-                            continue;
-                        }
+                    if let Some(num) = l.split(": ").nth(1)
+                        && let Ok(num) = num.parse::<u64>()
+                    {
+                        amount = num;
+                        continue;
                     }
 
-                    return Err(AppError::TxtParseError(format!("{}", l)));
+                    return Err(AppError::TxtParseError(l.to_string()));
                 }
 
                 // Unix epoch timestamp в миллисекундах
                 l if l.starts_with("TIMESTAMP") => {
-                    if let Some(num) = l.split(": ").nth(1) {
-                        if let Ok(num) = num.parse::<u64>() {
-                            timestamp = num;
-                            continue;
-                        }
+                    if let Some(num) = l.split(": ").nth(1)
+                        && let Ok(num) = num.parse::<u64>()
+                    {
+                        timestamp = num;
+                        continue;
                     }
-                    return Err(AppError::TxtParseError(format!("{}", l)));
+                    return Err(AppError::TxtParseError(l.to_string()));
                 }
 
                 //состояние транзакции
                 l if l.starts_with("STATUS") => match l.split(": ").nth(1) {
-                    Some("SUCCESS") => status = StatusTransaction::SUCCESS,
-                    Some("FAILURE") => status = StatusTransaction::FAILURE,
-                    Some("PENDING") => status = StatusTransaction::PENDING,
-                    _ => return Err(AppError::TxtParseError(format!("{}", l))),
+                    Some("SUCCESS") => status = StatusTransaction::Success,
+                    Some("FAILURE") => status = StatusTransaction::Failure,
+                    Some("PENDING") => status = StatusTransaction::Pending,
+                    _ => return Err(AppError::TxtParseError(l.to_string())),
                 },
 
                 // произвольное текстовое описание, UTF-8 в двойныхкавычках
@@ -203,7 +206,7 @@ impl Message {
                         description = desc.to_string();
                         continue;
                     }
-                    return Err(AppError::TxtParseError(format!("{}", l)));
+                    return Err(AppError::TxtParseError(l.to_string()));
                 }
 
                 // строки, которые не подошди под формат
@@ -227,6 +230,22 @@ impl Message {
     }
 }
 
+impl Display for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "TX_ID: {}\nTX_TYPE: {}\nFROM_USER_ID: {}\nTO_USER_ID: {}\nAMOUNT: {}\nTIMESTAMP: {}\nSTATUS: {}\nDESCRIPTION: {}\n\n",
+            self.tx_id,
+            self.tx_type,
+            self.from_user_id,
+            self.to_user_id,
+            self.amount,
+            self.timestamp,
+            self.status,
+            self.description,
+        )
+    }
+}
 #[cfg(test)]
 mod tests {
     use std::fs::File;
