@@ -80,6 +80,12 @@ impl BinYPBankRecord {
     }
 }
 
+impl Default for BinYPBankRecord {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BankRecord for BinYPBankRecord {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         for message in &self.data {

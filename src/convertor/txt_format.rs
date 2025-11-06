@@ -43,6 +43,12 @@ impl TxtYPBankRecord {
     }
 }
 
+impl Default for TxtYPBankRecord {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BankRecord for TxtYPBankRecord {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         for message in &self.data {

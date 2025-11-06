@@ -26,6 +26,12 @@ impl CsvYPBankRecord {
     }
 }
 
+impl Default for CsvYPBankRecord {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BankRecord for CsvYPBankRecord {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
         let mut writer = csv::Writer::from_writer(writer);
